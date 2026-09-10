@@ -8,7 +8,7 @@ use Illuminate\Http\Request;
 class DateTimeController extends Controller
 {
     /**
-     * Supported timezones for the application.
+     * Supported timezones.
      */
     private function availableTimezones(): array
     {
@@ -22,23 +22,27 @@ class DateTimeController extends Controller
             'America/New_York',
             'America/Los_Angeles',
             'Australia/Sydney',
+            'Pacific/Auckland',
         ];
     }
 
     /**
-     * Get current server date and time.
+     * Current server date and time.
      */
     public function currentDateTime()
     {
+        $now = now();
+
         return response()->json([
             'success' => true,
-            'datetime' => now()->format('d F Y, h:i:s A'),
+            'datetime' => $now->format('d F Y, h:i:s A'),
             'timezone' => config('app.timezone'),
+            'timestamp' => $now->timestamp,
         ]);
     }
 
     /**
-     * Get detailed server date and time information.
+     * Detailed server date and time information.
      */
     public function dateTimeInfo()
     {
@@ -60,6 +64,11 @@ class DateTimeController extends Controller
                 'week_of_year' => $now->weekOfYear,
                 'unix_timestamp' => $now->timestamp,
                 'is_leap_year' => $now->isLeapYear(),
+
+                'day_of_week_number' => $now->dayOfWeek,
+                'days_in_month' => $now->daysInMonth,
+                'quarter' => $now->quarter,
+                'weekend' => $now->isWeekend(),
             ],
 
             'timezones' => $this->availableTimezones(),
@@ -67,7 +76,7 @@ class DateTimeController extends Controller
     }
 
     /**
-     * Get current date and time for selected timezone.
+     * Current date and time for selected timezone.
      */
     public function timezoneDateTime(Request $request)
     {
@@ -102,7 +111,7 @@ class DateTimeController extends Controller
     }
 
     /**
-     * Format current server date and time using the selected format.
+     * Format current server date and time.
      */
     public function formattedDateTime(Request $request)
     {
@@ -116,7 +125,10 @@ class DateTimeController extends Controller
             'readable' => 'l, d F Y h:i:s A',
         ];
 
-        $format = $request->query('format', 'long_12');
+        $format = $request->query(
+            'format',
+            'long_12'
+        );
 
         if (!array_key_exists($format, $formats)) {
             return response()->json([
@@ -135,5 +147,152 @@ class DateTimeController extends Controller
             'timezone' => config('app.timezone'),
             'unix_timestamp' => $now->timestamp,
         ]);
+    }
+
+    /**
+     * World clock.
+     */
+    public function worldClock()
+    {
+        $cities = [
+            [
+                'city' => 'India',
+                'timezone' => 'Asia/Kolkata',
+            ],
+            [
+                'city' => 'Dubai',
+                'timezone' => 'Asia/Dubai',
+            ],
+            [
+                'city' => 'Tokyo',
+                'timezone' => 'Asia/Tokyo',
+            ],
+            [
+                'city' => 'Singapore',
+                'timezone' => 'Asia/Singapore',
+            ],
+            [
+                'city' => 'London',
+                'timezone' => 'Europe/London',
+            ],
+            [
+                'city' => 'Paris',
+                'timezone' => 'Europe/Paris',
+            ],
+            [
+                'city' => 'New York',
+                'timezone' => 'America/New_York',
+            ],
+            [
+                'city' => 'Los Angeles',
+                'timezone' => 'America/Los_Angeles',
+            ],
+            [
+                'city' => 'Sydney',
+                'timezone' => 'Australia/Sydney',
+            ],
+        ];
+
+        $result = [];
+
+        foreach ($cities as $city) {
+            $time = Carbon::now($city['timezone']);
+
+            $result[] = [
+                'city' => $city['city'],
+                'timezone' => $city['timezone'],
+                'time' => $time->format('h:i:s A'),
+                'date' => $time->format('d M Y'),
+                'day' => $time->format('l'),
+                'offset' => $time->format('P'),
+            ];
+        }
+
+        return response()->json([
+            'success' => true,
+            'cities' => $result,
+        ]);
+    }
+
+    /**
+     * Unix timestamp converter.
+     */
+    public function timestampConverter(Request $request)
+    {
+        $timestamp = $request->query('timestamp');
+
+        if (!is_numeric($timestamp)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Please provide a valid Unix timestamp.',
+            ], 422);
+        }
+
+        try {
+            $date = Carbon::createFromTimestamp(
+                (int) $timestamp,
+                config('app.timezone')
+            );
+
+            return response()->json([
+                'success' => true,
+                'timestamp' => (int) $timestamp,
+                'datetime' => $date->format('d F Y, h:i:s A'),
+                'date' => $date->format('d/m/Y'),
+                'time' => $date->format('h:i:s A'),
+                'day' => $date->format('l'),
+                'timezone' => config('app.timezone'),
+            ]);
+        } catch (\Throwable $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Unable to convert timestamp.',
+            ], 422);
+        }
+    }
+
+    /**
+     * Date difference calculator.
+     */
+    public function dateDifference(Request $request)
+    {
+        $start = $request->query('start');
+        $end = $request->query('end');
+
+        if (!$start || !$end) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Both start and end dates are required.',
+            ], 422);
+        }
+
+        try {
+            $startDate = Carbon::parse($start);
+            $endDate = Carbon::parse($end);
+
+            $diff = $startDate->diff($endDate);
+
+            return response()->json([
+                'success' => true,
+                'start_date' => $startDate->format('d F Y'),
+                'end_date' => $endDate->format('d F Y'),
+
+                'difference' => [
+                    'years' => $diff->y,
+                    'months' => $diff->m,
+                    'days' => $diff->d,
+                    'total_days' => $startDate->diffInDays($endDate),
+                    'total_weeks' => round(
+                        $startDate->diffInDays($endDate) / 7,
+                        2
+                    ),
+                ],
+            ]);
+        } catch (\Throwable $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Invalid date provided.',
+            ], 422);
+        }
     }
 }
