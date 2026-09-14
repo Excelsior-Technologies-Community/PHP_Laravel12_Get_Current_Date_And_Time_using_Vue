@@ -5,6 +5,71 @@
         :class="currentTheme"
     >
 
+        <div
+            v-if="!isLoggedIn"
+            class="login-overlay"
+        >
+
+            <form
+                class="login-card"
+                @submit.prevent="login"
+            >
+
+                <span class="login-mark">⌚</span>
+
+                <h2>Welcome back</h2>
+
+                <p>Sign in to manage your time dashboard.</p>
+
+                <label>
+                    Name
+                    <input
+                        v-model.trim="loginName"
+                        type="text"
+                        placeholder="Your name"
+                        required
+                    >
+                </label>
+
+                <label>
+                    Email
+                    <input
+                        v-model.trim="loginEmail"
+                        type="email"
+                        placeholder="you@example.com"
+                        required
+                    >
+                </label>
+
+                <label>
+                    Password
+                    <input
+                        v-model="loginPassword"
+                        type="password"
+                        placeholder="Minimum 4 characters"
+                        minlength="4"
+                        required
+                    >
+                </label>
+
+                <p
+                    v-if="loginError"
+                    class="login-error"
+                >
+                    {{ loginError }}
+                </p>
+
+                <button
+                    class="primary-button login-submit"
+                    type="submit"
+                >
+                    Sign in
+                </button>
+
+            </form>
+
+        </div>
+
         <!-- =====================================================
              HEADER
         ====================================================== -->
@@ -29,6 +94,87 @@
             >
                 {{ currentTheme === 'dark-theme' ? '☀️ Light' : '🌙 Dark' }}
             </button>
+
+            <div
+                v-if="isLoggedIn"
+                class="user-actions"
+            >
+                <span>Hi, {{ loginName }}</span>
+                <button
+                    class="logout-button"
+                    @click="logout"
+                >
+                    Sign out
+                </button>
+            </div>
+
+        </div>
+
+
+        <div class="feature-grid">
+
+            <div class="section-card calendar-card">
+
+                <div class="section-title compact-title">
+                    <div>
+                        <h2>📅 Calendar</h2>
+                        <p>Plan your dates at a glance.</p>
+                    </div>
+
+                    <div class="calendar-navigation">
+                        <button @click="changeCalendarMonth(-1)">‹</button>
+                        <strong>{{ calendarTitle }}</strong>
+                        <button @click="changeCalendarMonth(1)">›</button>
+                    </div>
+                </div>
+
+                <div class="calendar-weekdays">
+                    <span v-for="day in weekdays" :key="day">{{ day }}</span>
+                </div>
+
+                <div class="calendar-days">
+                    <span
+                        v-for="(day, index) in calendarDays"
+                        :key="`${day.date}-${index}`"
+                        class="calendar-day"
+                        :class="{
+                            'is-empty': !day.date,
+                            'is-today': day.isToday,
+                            'has-event': day.hasEvent
+                        }"
+                    >
+                        {{ day.date ? day.day : '' }}
+                    </span>
+                </div>
+
+            </div>
+
+            <div class="section-card countdown-card">
+
+                <div class="section-title">
+                    <h2>⏳ Countdown Timer</h2>
+                    <p>Set a target date and time.</p>
+                </div>
+
+                <input
+                    v-model="countdownTarget"
+                    class="wide-input"
+                    type="datetime-local"
+                    :min="minimumCountdownDate"
+                >
+
+                <div class="custom-countdown">
+                    {{ formattedCustomCountdown }}
+                </div>
+
+                <button
+                    class="control-button"
+                    @click="resetCustomCountdown"
+                >
+                    Reset countdown
+                </button>
+
+            </div>
 
         </div>
 
@@ -725,6 +871,64 @@
         </div>
 
 
+        <div class="section-card">
+
+            <div class="section-title">
+                <h2>🗓️ Events & Reminders</h2>
+                <p>Keep important dates close at hand.</p>
+            </div>
+
+            <div class="event-form">
+                <input
+                    v-model.trim="newEventTitle"
+                    type="text"
+                    placeholder="Reminder title"
+                >
+                <input
+                    v-model="newEventDate"
+                    type="datetime-local"
+                >
+                <button
+                    class="primary-button"
+                    @click="addEvent"
+                >
+                    Add reminder
+                </button>
+            </div>
+
+            <div
+                v-if="events.length"
+                class="event-list"
+            >
+                <div
+                    v-for="event in sortedEvents"
+                    :key="event.id"
+                    class="event-item"
+                >
+                    <div>
+                        <strong>{{ event.title }}</strong>
+                        <span>{{ formatEventDate(event.date) }}</span>
+                    </div>
+                    <button
+                        class="delete-button"
+                        @click="deleteEvent(event.id)"
+                        aria-label="Delete reminder"
+                    >
+                        ×
+                    </button>
+                </div>
+            </div>
+
+            <p
+                v-else
+                class="empty-state"
+            >
+                No reminders yet.
+            </p>
+
+        </div>
+
+
         <!-- =====================================================
              UNIX TIMESTAMP CONVERTER
         ====================================================== -->
@@ -1078,6 +1282,29 @@ export default {
 
 
             /* =========================================
+               REQUESTED FEATURES
+            ========================================= */
+
+            isLoggedIn: localStorage.getItem('date-dashboard-user') !== null,
+            loginName: localStorage.getItem('date-dashboard-user') || '',
+            loginEmail: '',
+            loginPassword: '',
+            loginError: '',
+
+            calendarDate: new Date(),
+            weekdays: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'],
+
+            countdownTarget: '',
+            customCountdownSeconds: 0,
+
+            events: JSON.parse(
+                localStorage.getItem('date-dashboard-events') || '[]'
+            ),
+            newEventTitle: '',
+            newEventDate: '',
+
+
+            /* =========================================
                THEME
             ========================================= */
 
@@ -1174,6 +1401,77 @@ export default {
                 )
                 .join(':');
 
+        },
+
+
+        calendarTitle() {
+
+            return this.calendarDate.toLocaleDateString(
+                undefined,
+                { month: 'long', year: 'numeric' }
+            );
+
+        },
+
+
+        calendarDays() {
+
+            const year = this.calendarDate.getFullYear();
+            const month = this.calendarDate.getMonth();
+            const firstDay = new Date(year, month, 1).getDay();
+            const daysInMonth = new Date(year, month + 1, 0).getDate();
+            const days = [];
+
+            for (let index = 0; index < firstDay; index++) {
+                days.push({ date: '', day: '' });
+            }
+
+            for (let day = 1; day <= daysInMonth; day++) {
+                const date = new Date(year, month, day);
+                const dateKey = this.toDateKey(date);
+
+                days.push({
+                    date: dateKey,
+                    day,
+                    isToday: dateKey === this.toDateKey(new Date()),
+                    hasEvent: this.events.some(
+                        event => event.date.slice(0, 10) === dateKey
+                    ),
+                });
+            }
+
+            return days;
+
+        },
+
+
+        sortedEvents() {
+
+            return [...this.events].sort(
+                (first, second) =>
+                    new Date(first.date) - new Date(second.date)
+            );
+
+        },
+
+
+        minimumCountdownDate() {
+
+            return this.toLocalDateTimeValue(new Date());
+
+        },
+
+
+        formattedCustomCountdown() {
+
+            const totalSeconds = Math.max(0, this.customCountdownSeconds);
+            const days = Math.floor(totalSeconds / 86400);
+            const hours = Math.floor((totalSeconds % 86400) / 3600);
+            const minutes = Math.floor((totalSeconds % 3600) / 60);
+            const seconds = totalSeconds % 60;
+
+            return `${days}d ${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+
         }
 
     },
@@ -1194,6 +1492,8 @@ export default {
         this.updateBrowserTime();
 
         this.updateCountdown();
+
+        this.updateCustomCountdown();
 
         this.timer = setInterval(
             () => {
@@ -1216,6 +1516,8 @@ export default {
 
                 this.updateCountdown();
 
+                this.updateCustomCountdown();
+
                 this.checkAlarm();
 
             },
@@ -1235,6 +1537,152 @@ export default {
 
 
     methods: {
+
+
+        /* =========================================
+           LOGIN
+        ========================================= */
+
+        login() {
+
+            if (this.loginPassword.length < 4) {
+                this.loginError = 'Password must contain at least 4 characters.';
+                return;
+            }
+
+            localStorage.setItem('date-dashboard-user', this.loginName);
+            this.isLoggedIn = true;
+            this.loginError = '';
+            this.loginPassword = '';
+
+        },
+
+
+        logout() {
+
+            localStorage.removeItem('date-dashboard-user');
+            this.isLoggedIn = false;
+            this.loginEmail = '';
+            this.loginPassword = '';
+
+        },
+
+
+        /* =========================================
+           CALENDAR
+        ========================================= */
+
+        changeCalendarMonth(offset) {
+
+            this.calendarDate = new Date(
+                this.calendarDate.getFullYear(),
+                this.calendarDate.getMonth() + offset,
+                1
+            );
+
+        },
+
+
+        toDateKey(date) {
+
+            return [
+                date.getFullYear(),
+                String(date.getMonth() + 1).padStart(2, '0'),
+                String(date.getDate()).padStart(2, '0'),
+            ].join('-');
+
+        },
+
+
+        toLocalDateTimeValue(date) {
+
+            const timezoneOffset = date.getTimezoneOffset() * 60000;
+
+            return new Date(date.getTime() - timezoneOffset)
+                .toISOString()
+                .slice(0, 16);
+
+        },
+
+
+        /* =========================================
+           COUNTDOWN
+        ========================================= */
+
+        updateCustomCountdown() {
+
+            if (!this.countdownTarget) {
+                this.customCountdownSeconds = 0;
+                return;
+            }
+
+            this.customCountdownSeconds = Math.max(
+                0,
+                Math.floor(
+                    (new Date(this.countdownTarget).getTime() - Date.now()) / 1000
+                )
+            );
+
+        },
+
+
+        resetCustomCountdown() {
+
+            this.countdownTarget = '';
+            this.customCountdownSeconds = 0;
+
+        },
+
+
+        /* =========================================
+           EVENTS
+        ========================================= */
+
+        addEvent() {
+
+            if (!this.newEventTitle || !this.newEventDate) {
+                return;
+            }
+
+            this.events.push({
+                id: Date.now(),
+                title: this.newEventTitle,
+                date: this.newEventDate,
+            });
+
+            this.persistEvents();
+            this.newEventTitle = '';
+            this.newEventDate = '';
+
+        },
+
+
+        deleteEvent(id) {
+
+            this.events = this.events.filter(event => event.id !== id);
+            this.persistEvents();
+
+        },
+
+
+        persistEvents() {
+
+            localStorage.setItem(
+                'date-dashboard-events',
+                JSON.stringify(this.events)
+            );
+
+        },
+
+
+        formatEventDate(date) {
+
+            return new Date(date).toLocaleString(undefined, {
+                dateStyle: 'medium',
+                timeStyle: 'short',
+            });
+
+        },
 
 
         /* =========================================
@@ -1985,6 +2433,182 @@ export default {
 }
 
 
+.user-actions {
+
+    display: flex;
+
+    align-items: center;
+
+    gap: 12px;
+
+    color: #64748b;
+
+    font-size: 14px;
+
+}
+
+
+.logout-button,
+.calendar-navigation button,
+.delete-button {
+
+    border: none;
+
+    cursor: pointer;
+
+}
+
+
+.logout-button {
+
+    padding: 8px 12px;
+
+    border-radius: 7px;
+
+    background: #fee2e2;
+
+    color: #b91c1c;
+
+}
+
+
+.login-overlay {
+
+    position: fixed;
+
+    z-index: 10;
+
+    inset: 0;
+
+    display: grid;
+
+    place-items: center;
+
+    padding: 20px;
+
+    background: rgba(15, 23, 42, 0.78);
+
+}
+
+
+.login-card {
+
+    width: min(100%, 410px);
+
+    padding: 34px;
+
+    border-radius: 18px;
+
+    background: #ffffff;
+
+    box-shadow: 0 24px 70px rgba(15, 23, 42, 0.3);
+
+}
+
+
+.login-card h2 {
+
+    margin: 8px 0;
+
+    color: #172033;
+
+}
+
+
+.login-card p {
+
+    margin: 0 0 22px;
+
+    color: #64748b;
+
+}
+
+
+.login-mark {
+
+    font-size: 34px;
+
+}
+
+
+.login-card label,
+.event-form label {
+
+    display: grid;
+
+    gap: 7px;
+
+    margin-top: 15px;
+
+    color: #475569;
+
+    font-size: 13px;
+
+    font-weight: bold;
+
+}
+
+
+.login-card input,
+.event-form input,
+.wide-input {
+
+    width: 100%;
+
+    padding: 11px 12px;
+
+    border: 1px solid #cbd5e1;
+
+    border-radius: 8px;
+
+    background: #ffffff;
+
+    color: #172033;
+
+    font: inherit;
+
+}
+
+
+.login-error {
+
+    margin: 14px 0 0 !important;
+
+    color: #b91c1c !important;
+
+    font-size: 13px;
+
+}
+
+
+.primary-button {
+
+    padding: 11px 16px;
+
+    border: none;
+
+    border-radius: 8px;
+
+    background: #0f766e;
+
+    color: #ffffff;
+
+    cursor: pointer;
+
+    font-weight: bold;
+
+}
+
+
+.login-submit {
+
+    width: 100%;
+
+    margin-top: 22px;
+
+}
+
+
 /* =====================================================
    MAIN CLOCK
 ===================================================== */
@@ -2193,6 +2817,273 @@ export default {
     box-shadow:
         0 5px 20px
         rgba(0, 0, 0, 0.06);
+
+}
+
+
+.feature-grid {
+
+    display: grid;
+
+    grid-template-columns: 1.15fr 0.85fr;
+
+    gap: 20px;
+
+}
+
+
+.compact-title {
+
+    display: flex;
+
+    align-items: center;
+
+    justify-content: space-between;
+
+    gap: 15px;
+
+}
+
+
+.calendar-navigation {
+
+    display: flex;
+
+    align-items: center;
+
+    gap: 10px;
+
+    white-space: nowrap;
+
+}
+
+
+.calendar-navigation button {
+
+    width: 30px;
+
+    height: 30px;
+
+    border-radius: 6px;
+
+    background: #e2e8f0;
+
+    color: #172033;
+
+    font-size: 20px;
+
+    line-height: 1;
+
+}
+
+
+.calendar-weekdays,
+.calendar-days {
+
+    display: grid;
+
+    grid-template-columns: repeat(7, 1fr);
+
+    gap: 6px;
+
+}
+
+
+.calendar-weekdays {
+
+    margin: 18px 0 8px;
+
+    color: #64748b;
+
+    font-size: 12px;
+
+    font-weight: bold;
+
+    text-align: center;
+
+}
+
+
+.calendar-day {
+
+    display: grid;
+
+    min-height: 34px;
+
+    place-items: center;
+
+    border-radius: 7px;
+
+    background: #f1f5f9;
+
+    color: #334155;
+
+    font-size: 13px;
+
+}
+
+
+.calendar-day.is-empty {
+
+    background: transparent;
+
+}
+
+
+.calendar-day.is-today {
+
+    background: #0f766e;
+
+    color: #ffffff;
+
+    font-weight: bold;
+
+}
+
+
+.calendar-day.has-event {
+
+    box-shadow: inset 0 -3px 0 #f59e0b;
+
+}
+
+
+.dark-theme .calendar-day,
+.dark-theme .calendar-navigation button {
+
+    background: #374151;
+
+    color: #f9fafb;
+
+}
+
+
+.dark-theme .calendar-day.is-empty {
+
+    background: transparent;
+
+}
+
+
+.countdown-card {
+
+    display: flex;
+
+    flex-direction: column;
+
+    justify-content: space-between;
+
+}
+
+
+.custom-countdown {
+
+    margin: 20px 0;
+
+    color: #0f766e;
+
+    font-size: 34px;
+
+    font-weight: bold;
+
+    letter-spacing: 1px;
+
+    text-align: center;
+
+}
+
+
+.event-form {
+
+    display: grid;
+
+    grid-template-columns: 1.2fr 1fr auto;
+
+    gap: 12px;
+
+}
+
+
+.event-list {
+
+    display: grid;
+
+    gap: 10px;
+
+    margin-top: 18px;
+
+}
+
+
+.event-item {
+
+    display: flex;
+
+    align-items: center;
+
+    justify-content: space-between;
+
+    gap: 15px;
+
+    padding: 13px 15px;
+
+    border-left: 4px solid #0f766e;
+
+    border-radius: 8px;
+
+    background: #f1f5f9;
+
+}
+
+
+.event-item strong,
+.event-item span {
+
+    display: block;
+
+}
+
+
+.event-item span {
+
+    margin-top: 4px;
+
+    color: #64748b;
+
+    font-size: 13px;
+
+}
+
+
+.delete-button {
+
+    width: 28px;
+
+    height: 28px;
+
+    border-radius: 50%;
+
+    background: #fee2e2;
+
+    color: #b91c1c;
+
+    font-size: 18px;
+
+}
+
+
+.empty-state {
+
+    margin-bottom: 0;
+
+    color: #64748b;
+
+}
+
+
+.dark-theme .event-item {
+
+    background: #374151;
 
 }
 
@@ -2916,6 +3807,13 @@ input {
 
 @media (max-width: 700px) {
 
+    .feature-grid,
+    .event-form {
+
+        grid-template-columns: 1fr;
+
+    }
+
     .dashboard-header {
 
         flex-direction: column;
@@ -3016,6 +3914,29 @@ input {
     .button-group {
 
         flex-direction: column;
+
+    }
+
+    .compact-title,
+    .user-actions {
+
+        align-items: flex-start;
+
+        flex-direction: column;
+
+    }
+
+    .calendar-navigation {
+
+        width: 100%;
+
+        justify-content: space-between;
+
+    }
+
+    .custom-countdown {
+
+        font-size: 25px;
 
     }
 
